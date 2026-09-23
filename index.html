@@ -44,6 +44,17 @@
     margin: 0; max-width: 34rem; font-size: .95rem; line-height: 1.6; color: #5A5478;
   }
   #cargando .firma { margin: 0; font-size: .86rem; color: #8A86A8; }
+  #cargando #sin-worker {
+    max-width: 36rem; text-align: left; display: flex; flex-direction: column;
+    gap: 10px; font-size: .95rem; line-height: 1.6; color: #5A5478;
+    background: #FFFFFF; border: 1px solid #E6E0FA; border-radius: 10px;
+    padding: 20px 22px;
+  }
+  #cargando #sin-worker[hidden] { display: none; }
+  #cargando #sin-worker p { margin: 0; }
+  #cargando #sin-worker .titulo-aviso {
+    font-size: 1.05rem; font-weight: 700; color: #2B2350;
+  }
   #cargando .barra {
     width: min(260px, 70vw); height: 4px; border-radius: 999px;
     background: #E6E0FA; overflow: hidden;
@@ -70,15 +81,74 @@
      responde al instante.</p>
   <p class="firma">Gracias por la paciencia.</p>
   <div class="barra"><span></span></div>
+  <div id="sin-worker" hidden>
+    <p class="titulo-aviso">Este navegador no puede abrir el tablero</p>
+    <p>El tablero corre entero dentro del navegador, y para eso necesita una
+       pieza que el tuyo tiene desactivada: los <em>service workers</em>. Sin
+       ella la aplicacion no se puede servir a si misma y la pagina termina en
+       un error 404.</p>
+    <p><strong>Safari:</strong> en el menu Desarrollo, desmarca &laquo;Desactivar
+       service workers&raquo;. Si no ves ese menu, activalo en Ajustes &rsaquo;
+       Avanzado &rsaquo; &laquo;Mostrar funciones para desarrolladores web&raquo;.
+       En ventana privada no funcionan nunca: usa una ventana normal.</p>
+    <p><strong>Si no es eso:</strong> borra los datos de este sitio
+       -Ajustes &rsaquo; Privacidad &rsaquo; Gestionar datos de sitios web, buscar
+       &laquo;mebucca&raquo;- y recarga. Puede haber quedado una version vieja
+       guardada. Tambien conviene desactivar bloqueadores de contenido aqui.</p>
+    <p class="firma">Si nada de eso resulta, el tablero abre sin configurar nada
+       en Chrome o Edge.</p>
+  </div>
 </div>
 <script>
   (function () {
+    var pantalla = function () { return document.getElementById("cargando"); };
+
     var quitar = function () {
-      var pantalla = document.getElementById("cargando");
-      if (!pantalla) return;
-      pantalla.classList.add("lista");
-      setTimeout(function () { pantalla.remove(); }, 400);
+      var espera = pantalla();
+      if (!espera || espera.dataset.trabado === "si") return;
+      espera.classList.add("lista");
+      setTimeout(function () { espera.remove(); }, 400);
     };
+
+    // El tablero vive en un iframe cuya direccion no existe en el servidor: la
+    // inventa el service worker al vuelo. Si no hay service worker, esa
+    // direccion se va al servidor, que responde 404, y el visitante ve un error
+    // de GitHub sin ninguna explicacion. Esto lo explica antes de que pase.
+    var avisar = function () {
+      var espera = pantalla();
+      if (!espera) return;
+      espera.dataset.trabado = "si";
+      espera.classList.remove("lista");
+      var aviso = document.getElementById("sin-worker");
+      if (aviso) aviso.hidden = false;
+      var barra = espera.querySelector(".barra");
+      if (barra) barra.hidden = true;
+      var detalle = espera.querySelector(".detalle");
+      if (detalle) detalle.hidden = true;
+      var firma = espera.querySelector(".firma");
+      if (firma) firma.hidden = true;
+    };
+
+    // Se pregunta por el valor y no por la propiedad: un navegador con los
+    // service workers desactivados igual declara "serviceWorker" en navigator,
+    // solo que entrega undefined. Y leerla puede lanzar, asi que va protegido.
+    var worker = null;
+    try { worker = navigator.serviceWorker || null; } catch (e) { worker = null; }
+
+    if (!worker) {
+      avisar();
+      return;
+    }
+
+    // Margen amplio a proposito: registrar el service worker toma un instante,
+    // pero en la primera visita el navegador ademas puede estar descargando. Si
+    // pasado este plazo sigue sin controlar la pagina, no va a llegar nunca.
+    setTimeout(function () {
+      var controlando = false;
+      try { controlando = !!navigator.serviceWorker.controller; } catch (e) {}
+      if (!controlando) avisar();
+    }, 25000);
+
     document.addEventListener("shiny:connected", quitar);
     // Respaldo: si el evento no llegara, la espera no se queda pegada encima
     // de una aplicacion que ya cargo.
