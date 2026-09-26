@@ -84,9 +84,9 @@
   <div id="sin-worker" hidden>
     <p class="titulo-aviso">Este navegador no puede abrir el tablero</p>
     <p>El tablero corre entero dentro del navegador, y para eso necesita una
-       pieza que el tuyo tiene desactivada: los <em>service workers</em>. Sin
-       ella la aplicacion no se puede servir a si misma y la pagina termina en
-       un error 404.</p>
+       pieza que en el tuyo no esta funcionando: los <em>service workers</em>.
+       Sin ella la aplicacion no se puede servir a si misma y la pagina termina
+       en un error 404.</p>
     <p><strong>Safari:</strong> en el menu Desarrollo, desmarca &laquo;Desactivar
        service workers&raquo;. Si no ves ese menu, activalo en Ajustes &rsaquo;
        Avanzado &rsaquo; &laquo;Mostrar funciones para desarrolladores web&raquo;.
@@ -149,10 +149,53 @@
       if (!controlando) avisar();
     }, 25000);
 
-    document.addEventListener("shiny:connected", quitar);
-    // Respaldo: si el evento no llegara, la espera no se queda pegada encima
-    // de una aplicacion que ya cargo.
-    setTimeout(quitar, 60000);
+    // Aunque haya service worker, el iframe puede terminar en el 404 de GitHub:
+    // el worker solo sirve la direccion de la app si la pagina se la registro, y
+    // ese registro vive en su memoria. Si el navegador lo detiene mientras el
+    // tablero se descarga -Safari lo hace con facilidad-, lo olvida y la
+    // direccion se va al servidor. Recargar lo vuelve a registrar. Se intenta
+    // dos veces; si sigue fallando, se explica en vez de mostrar el 404.
+    var clave_reintentos = "empatia-reintentos";
+    var reintentos = function () {
+      try { return Number(sessionStorage.getItem(clave_reintentos) || 0); } catch (e) { return 99; }
+    };
+
+    var vigilar = setInterval(function () {
+      var raiz = document.getElementById("root");
+      var marco = raiz ? raiz.querySelector("iframe") : null;
+      if (!marco) return;
+      var ventana = null, documento = null;
+      try { ventana = marco.contentWindow; documento = marco.contentDocument; } catch (e) { return; }
+      if (!documento || !documento.body) return;
+
+      // La aplicacion conecto: se quita la espera. El evento shiny:connected
+      // ocurre dentro del iframe, asi que desde aqui se pregunta por el estado.
+      var conectada = false;
+      try { conectada = !!(ventana.Shiny && ventana.Shiny.shinyapp && ventana.Shiny.shinyapp.isConnected()); } catch (e) {}
+      if (conectada) {
+        clearInterval(vigilar);
+        try { sessionStorage.removeItem(clave_reintentos); } catch (e) {}
+        quitar();
+        return;
+      }
+
+      var texto = (documento.title || "") + " " + (documento.body.innerText || "").slice(0, 400);
+      if (!ventana.Shiny && /File not found|Page not found/i.test(texto)) {
+        clearInterval(vigilar);
+        var hechos = reintentos();
+        if (hechos < 2) {
+          try { sessionStorage.setItem(clave_reintentos, String(hechos + 1)); } catch (e) {}
+          window.location.reload();
+        } else {
+          try { sessionStorage.removeItem(clave_reintentos); } catch (e) {}
+          avisar();
+        }
+      }
+    }, 1000);
+
+    // Respaldo: si no se pudiera leer el estado de la aplicacion, la espera no
+    // se queda pegada encima de una aplicacion que ya cargo.
+    setTimeout(quitar, 90000);
   })();
 </script>
     <div style="height: 100vh; width: 100vw" id="root"></div>
